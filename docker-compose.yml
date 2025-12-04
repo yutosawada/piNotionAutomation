@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  sync:
+    build: .
+    container_name: notion-sync
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python sync_databases.py
+
+  update-business-state:
+    build: .
+    container_name: notion-update-business-state
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python update_business_state.py
