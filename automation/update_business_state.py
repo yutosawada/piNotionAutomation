@@ -15,40 +15,11 @@ Features:
 
 import os
 import json
-import sys
-from io import StringIO
+from pathlib import Path
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from notion_client import Client
-
-
-class LogCapture:
-    """Capture stdout to string for logging."""
-    def __init__(self):
-        self.log = StringIO()
-        self.original_stdout = sys.stdout
-
-    def start(self):
-        """Start capturing output."""
-        sys.stdout = self
-
-    def stop(self):
-        """Stop capturing and restore original stdout."""
-        sys.stdout = self.original_stdout
-
-    def write(self, text):
-        """Write to both log and original stdout."""
-        self.log.write(text)
-        self.original_stdout.write(text)
-
-    def flush(self):
-        """Flush both streams."""
-        self.log.flush()
-        self.original_stdout.flush()
-
-    def get_log(self):
-        """Get captured log content."""
-        return self.log.getvalue()
+from automation.execution_logger import LogCapture, save_execution_log
 
 
 def fetch_all_pages(notion, database_id):
@@ -194,6 +165,27 @@ def save_to_json(companies, filename='active_companies.json'):
 
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
+
+
+def _load_reset_days(default_days=14):
+    """Load Business State style reset threshold from schedule_config.yml."""
+    config_path = Path(__file__).resolve().parent.parent / "schedule_config.yml"
+    if not config_path.exists():
+        return default_days
+
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.split("#", 1)[0].strip()
+                if stripped.startswith("business_state_reset_days:"):
+                    _, value = stripped.split(":", 1)
+                    value = value.strip()
+                    if value.isdigit():
+                        return int(value)
+    except Exception:
+        return default_days
+
+    return default_days
 
 
 def sync_business_state(notion, page_id, business_state, status_buffer, last_state, business_state_log, apply_style=True):
@@ -392,7 +384,7 @@ def process_active_companies(notion, companies):
 def reset_old_business_state_styles(notion, companies):
     """
     Reset Business State styles for companies where business_status_update_day
-    is more than 2 weeks old.
+    is older than the configured threshold (default 14 days).
 
     Args:
         notion: Notion client instance
@@ -404,9 +396,10 @@ def reset_old_business_state_styles(notion, companies):
     if not companies:
         return 0
 
-    print("\nResetting old styles (>2 weeks)...")
+    print("\nResetting old styles (> threshold)...")
+    reset_days = _load_reset_days()
     today = datetime.now().date()
-    two_weeks_ago = today - timedelta(days=14)
+    cutoff_date = today - timedelta(days=reset_days)
     reset_count = 0
     error_count = 0
 
@@ -435,8 +428,8 @@ def reset_old_business_state_styles(notion, companies):
 
             update_date = datetime.fromisoformat(update_date_str).date()
 
-            # Check if older than 2 weeks
-            if update_date <= two_weeks_ago:
+            # Check if older than the threshold
+            if update_date <= cutoff_date:
                 if reset_business_state_style(notion, page_id, business_state):
                     print(f"  ✓ {company_name}: Style reset")
                     reset_count += 1
@@ -451,61 +444,6 @@ def reset_old_business_state_styles(notion, companies):
         print(f"  Reset: {reset_count}, Errors: {error_count}")
 
     return reset_count
-
-
-def save_execution_log(notion, exe_log_db_id, status, log_content):
-    """
-    Save execution log to EXE_LOG_DB_ID database.
-
-    Args:
-        notion: Notion client instance
-        exe_log_db_id: Execution log database ID
-        status: "正常完了" or "異常終了"
-        log_content: Log text content
-    """
-    try:
-        now = datetime.now()
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
-        name = f"update_business_state_{timestamp}"
-        date_time = now.isoformat()
-
-        # Create new page in execution log database
-        notion.pages.create(
-            parent={"database_id": exe_log_db_id},
-            properties={
-                "名前": {
-                    "title": [
-                        {
-                            "text": {
-                                "content": name
-                            }
-                        }
-                    ]
-                },
-                "日付": {
-                    "date": {
-                        "start": date_time
-                    }
-                },
-                "実行結果": {
-                    "select": {
-                        "name": status
-                    }
-                },
-                "ログ本文": {
-                    "rich_text": [
-                        {
-                            "text": {
-                                "content": log_content[:2000]  # Notion has 2000 char limit for rich_text
-                            }
-                        }
-                    ]
-                }
-            }
-        )
-        print(f"✓ Execution log saved to database")
-    except Exception as e:
-        print(f"✗ Failed to save execution log: {str(e)}")
 
 
 def main():
@@ -563,7 +501,13 @@ def main():
 
         # Save execution log to Notion if EXE_LOG_DB_ID is configured
         if exe_log_db_id:
-            save_execution_log(notion, exe_log_db_id, status, log_content)
+            save_execution_log(
+                notion,
+                exe_log_db_id,
+                status,
+                log_content,
+                script_name="update_business_state"
+            )
 
 
 if __name__ == "__main__":

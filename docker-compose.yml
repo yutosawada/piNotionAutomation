@@ -1,15 +1,15 @@
 version: '3.8'
 
 services:
-  sync:
+  sync-databases:
     build: .
-    container_name: notion-sync
+    container_name: notion-sync-databases
     env_file:
       - .env
     volumes:
       - .:/app
     working_dir: /app
-    command: python sync_databases.py
+    command: python -m automation.sync_databases
 
   sync-oi-issue-list:
     build: .
@@ -19,7 +19,7 @@ services:
     volumes:
       - .:/app
     working_dir: /app
-    command: python sync_oi_issue_list.py
+    command: python -m automation.sync_oi_issue_list
 
   update-business-state:
     build: .
@@ -29,4 +29,4 @@ services:
     volumes:
       - .:/app
     working_dir: /app
-    command: python update_business_state.py
+    command: python -m automation.update_business_state
