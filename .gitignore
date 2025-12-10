@@ -36,3 +36,8 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+.env
+venv
+__pycache__
+cron.log
+active_companies.json

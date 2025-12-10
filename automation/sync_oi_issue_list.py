@@ -11,6 +11,7 @@ OI Issue List -> OI List Share Sync Script
 """
 
 import os
+import sys
 from typing import Dict, Optional, Tuple
 from dotenv import load_dotenv
 from notion_client import Client
@@ -354,6 +355,7 @@ def main():
     log_capture = LogCapture()
     log_capture.start()
     status = "正常完了"
+    exit_code = 0
 
     issue_title_property = get_title_property_name(notion, issue_db_id)
     share_title_property = get_title_property_name(notion, share_db_id)
@@ -402,10 +404,15 @@ def main():
         print(f"Created: {created}")
         print(f"Failed: {failed}")
 
+        if failed > 0:
+            status = "異常終了"
+            exit_code = 1
+
         copy_reference_properties(notion, share_db_id)
 
     except Exception as exc:
         status = "異常終了"
+        exit_code = 1
         print(f"✗ Error: {exc}")
     finally:
         log_capture.stop()
@@ -418,6 +425,8 @@ def main():
                 log_content,
                 script_name="sync_oi_issue_list"
             )
+        if exit_code != 0:
+            sys.exit(exit_code)
 
 
 if __name__ == "__main__":

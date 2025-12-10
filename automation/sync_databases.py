@@ -6,6 +6,7 @@ and adds missing companies to FIL_STATUS_REPORT.
 """
 
 import os
+import sys
 from dotenv import load_dotenv
 from notion_client import Client
 from automation.execution_logger import LogCapture, save_execution_log
@@ -154,6 +155,7 @@ def main():
     log_capture = LogCapture()
     log_capture.start()
     status = "正常完了"
+    exit_code = 0
 
     print("=" * 80)
     print("Notion Database Sync: SU Long List -> Status Report")
@@ -213,9 +215,14 @@ def main():
             print("=" * 80)
             print()
 
+            if failed_count > 0:
+                status = "異常終了"
+                exit_code = 1
+
     except Exception as exc:
         status = "異常終了"
         print(f"✗ Error: {exc}")
+        exit_code = 1
     finally:
         log_capture.stop()
         log_content = log_capture.get_log()
@@ -227,6 +234,8 @@ def main():
                 log_content,
                 script_name="sync_databases"
             )
+        if exit_code != 0:
+            sys.exit(exit_code)
 
 
 if __name__ == "__main__":
