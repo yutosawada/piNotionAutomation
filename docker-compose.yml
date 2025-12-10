@@ -11,6 +11,16 @@ services:
     working_dir: /app
     command: python sync_databases.py
 
+  sync-oi-issue-list:
+    build: .
+    container_name: notion-sync-oi-issue-list
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python sync_oi_issue_list.py
+
   update-business-state:
     build: .
     container_name: notion-update-business-state
