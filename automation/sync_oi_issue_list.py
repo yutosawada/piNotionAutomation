@@ -353,14 +353,15 @@ def main():
 
     notion = Client(auth=notion_api_key)
     log_capture = LogCapture()
-    log_capture.start()
     status = "正常完了"
     exit_code = 0
 
-    issue_title_property = get_title_property_name(notion, issue_db_id)
-    share_title_property = get_title_property_name(notion, share_db_id)
-
     try:
+        log_capture.start()
+
+        issue_title_property = get_title_property_name(notion, issue_db_id)
+        share_title_property = get_title_property_name(notion, share_db_id)
+
         active_issues = get_active_issues(notion, issue_db_id, issue_title_property)
         share_entries, linked_issue_ids = get_share_entries(notion, share_db_id, share_title_property)
 
