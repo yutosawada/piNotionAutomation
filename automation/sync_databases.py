@@ -47,7 +47,7 @@ def notion_database_query(api_token: str, database_id: str, start_cursor=None):
     return resp.json()
 
 
-def fetch_all_pages(api_token: str, notion, database_id):
+def fetch_all_pages(api_token: str, database_id: str):
     """Fetch all pages from a database with pagination."""
     all_results = []
     has_more = True
@@ -113,10 +113,10 @@ def is_active_flag(properties):
     return False
 
 
-def get_active_companies(api_token, notion, su_long_list_db_id):
+def get_active_companies(api_token: str, su_long_list_db_id: str):
     """Get all active companies from SU Long List."""
     print("Fetching active companies from SU Long List...")
-    all_pages = fetch_all_pages(api_token, notion, su_long_list_db_id)
+    all_pages = fetch_all_pages(api_token, su_long_list_db_id)
 
     active_companies = {}
     for page in all_pages:
@@ -130,10 +130,10 @@ def get_active_companies(api_token, notion, su_long_list_db_id):
     return active_companies
 
 
-def get_status_report_companies(api_token, notion, status_report_db_id):
+def get_status_report_companies(api_token: str, status_report_db_id: str):
     """Get all companies from Status Report."""
     print("Fetching companies from Status Report...")
-    all_pages = fetch_all_pages(api_token, notion, status_report_db_id)
+    all_pages = fetch_all_pages(api_token, status_report_db_id)
 
     status_companies = {}
     for page in all_pages:
@@ -208,8 +208,8 @@ def main():
     print()
 
     try:
-        active_companies = get_active_companies(notion_api_key, notion, su_long_list_db_id)
-        status_companies = get_status_report_companies(notion_api_key, notion, status_report_db_id)
+        active_companies = get_active_companies(notion_api_key, su_long_list_db_id)
+        status_companies = get_status_report_companies(notion_api_key, status_report_db_id)
 
         print()
         print("-" * 80)
