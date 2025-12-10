@@ -60,21 +60,34 @@ build_cron_line() {
     return 1
   fi
 
-  local minute_part hour_part
-  if (( 60 % interval == 0 )); then
+  local minute_part hour_part dom_part
+  minute_part="*"
+  hour_part="*"
+  dom_part="*"
+
+  if (( interval < 60 )); then
     minute_part="*/${interval}"
-    hour_part="*"
-  elif (( interval >= 60 && interval % 60 == 0 )); then
+  elif (( interval < 1440 )); then
     local hours=$(( interval / 60 ))
-    minute_part="0"
-    hour_part="*/${hours}"
+    if (( interval % 60 == 0 )); then
+      minute_part="0"
+      hour_part="*/${hours}"
+    else
+      minute_part="*/${interval}"
+    fi
   else
-    minute_part="*/${interval}"
-    hour_part="*"
+    local days=$(( interval / 1440 ))
+    if (( interval % 1440 == 0 && days <= 31 )); then
+      minute_part="0"
+      hour_part="0"
+      dom_part="*/${days}"
+    else
+      return 1
+    fi
   fi
 
-  printf "%s %s * * * cd %s && %s >> %s/cron.log 2>&1\n" \
-    "${minute_part}" "${hour_part}" "${REPO_ROOT}" "${command}" "${REPO_ROOT}"
+  printf "%s %s %s * * cd %s && %s >> %s/cron.log 2>&1\n" \
+    "${minute_part}" "${hour_part}" "${dom_part}" "${REPO_ROOT}" "${command}" "${REPO_ROOT}"
 }
 
 CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
