@@ -41,3 +41,4 @@ venv
 __pycache__
 cron.log
 active_companies.json
+htmlcov/

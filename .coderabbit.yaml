@@ -1,0 +1,10 @@
+# .coderabbit.yaml
+version: "2"
+language: "ja-JP" # ここを "ja-JP" にすると日本語でレビューしてくれます
+
+reviews:
+  profile: "chill" # "assertive"(厳格) か "chill"(穏やか) を選べます
+  request_changes_workflow: false # レビューでChanges Requestを出すかどうか
+  high_level_summary: true # PR全体の要約を出すか
+  auto_review:
+    enabled: true # PR作成時に自動でレビューするか
