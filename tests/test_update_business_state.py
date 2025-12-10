@@ -30,6 +30,7 @@ class TestUpdateBusinessState(unittest.TestCase):
                 "properties": {
                     "business_status_update_day": old_date,
                     "Business State": "X",
+                    "_business_state_styled": True,  # Style is applied, needs reset
                 },
             },
             {
@@ -38,6 +39,7 @@ class TestUpdateBusinessState(unittest.TestCase):
                 "properties": {
                     "business_status_update_day": recent_date,
                     "Business State": "Y",
+                    "_business_state_styled": True,
                 },
             },
         ]
