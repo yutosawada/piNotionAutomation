@@ -71,29 +71,35 @@ def get_company_name(page):
     For SU Long List: '企業名' (title)
     For Status Report: 'Name' (rollup -> title)
     """
-    properties = page["properties"]
+    properties = page.get("properties", {})
 
     # Try '企業名' field (title type) - for SU Long List
-    if "企業名" in properties and properties["企業名"]["type"] == "title":
-        title_data = properties["企業名"]["title"]
+    company_field = properties.get("企業名")
+    if company_field and company_field.get("type") == "title":
+        title_data = company_field.get("title", [])
         if title_data:
-            return "".join([t["plain_text"] for t in title_data])
+            return "".join([t.get("plain_text", "") for t in title_data])
 
     # Try 'Name' field (rollup type) - for Status Report
-    if "Name" in properties and properties["Name"]["type"] == "rollup":
-        rollup_data = properties["Name"]["rollup"].get("array", [])
+    name_field = properties.get("Name")
+    if name_field and name_field.get("type") == "rollup":
+        rollup = name_field.get("rollup", {})
+        rollup_data = rollup.get("array", [])
         if rollup_data:
             for item in rollup_data:
-                if item["type"] == "title" and item["title"]:
-                    return "".join([t["plain_text"] for t in item["title"]])
+                if item.get("type") == "title":
+                    item_title = item.get("title", [])
+                    if item_title:
+                        return "".join([t.get("plain_text", "") for t in item_title])
 
     # Try 'No' field (title type) - for Status Report
-    if "No" in properties and properties["No"]["type"] == "title":
-        title_data = properties["No"]["title"]
+    no_field = properties.get("No")
+    if no_field and no_field.get("type") == "title":
+        title_data = no_field.get("title", [])
         if title_data:
-            text = "".join([t["plain_text"] for t in title_data])
+            text = "".join([t.get("plain_text", "") for t in title_data])
             # If it's a number, skip it
-            if not text.isdigit():
+            if text and not text.isdigit():
                 return text
 
     return None
