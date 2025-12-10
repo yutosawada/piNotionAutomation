@@ -14,6 +14,7 @@ import os
 from typing import Dict, Optional, Tuple
 from dotenv import load_dotenv
 from notion_client import Client
+from automation.execution_logger import LogCapture, save_execution_log
 
 
 def fetch_all_pages(notion: Client, database_id: str):
@@ -335,6 +336,7 @@ def main():
     notion_api_key = os.getenv('NOTION_API_KEY')
     issue_db_id = os.getenv('OI_ISSUE_LIST_ID')
     share_db_id = os.getenv('OI_LIST_SHARE_RS_ID')
+    exe_log_db_id = os.getenv('EXE_LOG_DB_ID')
 
     if not notion_api_key:
         print("Error: NOTION_API_KEY is not set.")
@@ -349,54 +351,73 @@ def main():
         return
 
     notion = Client(auth=notion_api_key)
+    log_capture = LogCapture()
+    log_capture.start()
+    status = "正常完了"
 
     issue_title_property = get_title_property_name(notion, issue_db_id)
     share_title_property = get_title_property_name(notion, share_db_id)
 
-    active_issues = get_active_issues(notion, issue_db_id, issue_title_property)
-    share_entries, linked_issue_ids = get_share_entries(notion, share_db_id, share_title_property)
+    try:
+        active_issues = get_active_issues(notion, issue_db_id, issue_title_property)
+        share_entries, linked_issue_ids = get_share_entries(notion, share_db_id, share_title_property)
 
-    missing_titles = [
-        (title, page_id)
-        for title, page_id in active_issues.items()
-        if title not in share_entries and page_id not in linked_issue_ids
-    ]
+        missing_titles = [
+            (title, page_id)
+            for title, page_id in active_issues.items()
+            if title not in share_entries and page_id not in linked_issue_ids
+        ]
 
-    if not missing_titles:
-        print("✓ All active issues already exist in OI List Share.")
-        created = 0
-        failed = 0
-    else:
-        print(f"Creating {len(missing_titles)} new entries in OI List Share...")
-        created = 0
-        failed = 0
+        if not missing_titles:
+            print("✓ All active issues already exist in OI List Share.")
+            created = 0
+            failed = 0
+        else:
+            print(f"Creating {len(missing_titles)} new entries in OI List Share...")
+            created = 0
+            failed = 0
 
-        for issue_title, issue_page_id in missing_titles:
-            success, error_message = create_share_entry(
+            for issue_title, issue_page_id in missing_titles:
+                success, error_message = create_share_entry(
+                    notion,
+                    share_db_id,
+                    share_title_property,
+                    issue_title,
+                    issue_page_id
+                )
+
+                if success:
+                    print(f"  ✓ Added {issue_title}")
+                    created += 1
+                else:
+                    print(f"  ✗ Failed {issue_title}: {error_message}")
+                    failed += 1
+
+        print()
+        print("=" * 60)
+        print("Sync Summary")
+        print("=" * 60)
+        print(f"Active issues: {len(active_issues)}")
+        print(f"Existing share entries: {len(share_entries)}")
+        print(f"Created: {created}")
+        print(f"Failed: {failed}")
+
+        copy_reference_properties(notion, share_db_id)
+
+    except Exception as exc:
+        status = "異常終了"
+        print(f"✗ Error: {exc}")
+    finally:
+        log_capture.stop()
+        log_content = log_capture.get_log()
+        if exe_log_db_id:
+            save_execution_log(
                 notion,
-                share_db_id,
-                share_title_property,
-                issue_title,
-                issue_page_id
+                exe_log_db_id,
+                status,
+                log_content,
+                script_name="sync_oi_issue_list"
             )
-
-            if success:
-                print(f"  ✓ Added {issue_title}")
-                created += 1
-            else:
-                print(f"  ✗ Failed {issue_title}: {error_message}")
-                failed += 1
-
-    print()
-    print("=" * 60)
-    print("Sync Summary")
-    print("=" * 60)
-    print(f"Active issues: {len(active_issues)}")
-    print(f"Existing share entries: {len(share_entries)}")
-    print(f"Created: {created}")
-    print(f"Failed: {failed}")
-
-    copy_reference_properties(notion, share_db_id)
 
 
 if __name__ == "__main__":

@@ -44,21 +44,21 @@ pip install -r requirements.txt
 ## 実行方法
 
 ### ホスト環境で直接実行
-仮想環境を有効化したら、以下のどちらかを実行します。
+仮想環境を有効化したら、以下のどちらかを実行します（`automation/` 配下に配置）。
 
 ```bash
-python sync_databases.py
-python sync_oi_issue_list.py
-python update_business_state.py
+python -m automation.sync_databases
+python -m automation.sync_oi_issue_list
+python -m automation.update_business_state
 ```
 
-どちらのスクリプトも実行結果を詳細に出力します。`update_business_state.py` 実行後は `active_companies.json` に処理対象の SU Long List が保存され、`EXE_LOG_DB_ID` が設定されている場合は同じログを実行ログ用データベースにアップロードします。
+どちらのスクリプトも実行結果を詳細に出力します。`automation/update_business_state.py` 実行後は `active_companies.json` に処理対象の SU Long List が保存され、`EXE_LOG_DB_ID` が設定されている場合は同じログを実行ログ用データベースにアップロードします。
 
 ### Docker Compose 経由
 `docker-compose.yml` はローカルのコードを `/app` にマウントしたままコンテナを起動します。サービス名を指定して任意のジョブを実行します。
 
 ```bash
-docker compose run --rm sync
+docker compose run --rm sync-databases
 docker compose run --rm sync-oi-issue-list
 docker compose run --rm update-business-state
 ```

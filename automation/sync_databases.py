@@ -8,6 +8,7 @@ and adds missing companies to FIL_STATUS_REPORT.
 import os
 from dotenv import load_dotenv
 from notion_client import Client
+from automation.execution_logger import LogCapture, save_execution_log
 
 
 def get_company_name(page):
@@ -134,6 +135,7 @@ def main():
     notion_api_key = os.getenv('NOTION_API_KEY')
     su_long_list_db_id = os.getenv('FIL_SU_LONG_LIST_DB_ID')
     status_report_db_id = os.getenv('FIL_STATUS_REPORT_DB_ID')
+    exe_log_db_id = os.getenv('EXE_LOG_DB_ID')
 
     if not notion_api_key:
         print("Error: NOTION_API_KEY not found in .env file")
@@ -149,64 +151,82 @@ def main():
 
     # Initialize Notion client
     notion = Client(auth=notion_api_key)
+    log_capture = LogCapture()
+    log_capture.start()
+    status = "正常完了"
 
     print("=" * 80)
     print("Notion Database Sync: SU Long List -> Status Report")
     print("=" * 80)
     print()
 
-    # Get active companies from SU Long List
-    active_companies = get_active_companies(notion, su_long_list_db_id)
+    try:
+        # Get active companies from SU Long List
+        active_companies = get_active_companies(notion, su_long_list_db_id)
 
-    # Get existing companies from Status Report
-    status_companies = get_status_report_companies(notion, status_report_db_id)
+        # Get existing companies from Status Report
+        status_companies = get_status_report_companies(notion, status_report_db_id)
 
-    print()
-    print("-" * 80)
-    print("Comparison Results:")
-    print("-" * 80)
-
-    # Find missing companies
-    missing_companies = []
-    for company_name, page_id in active_companies.items():
-        if company_name not in status_companies:
-            missing_companies.append((company_name, page_id))
-
-    if not missing_companies:
-        print("✓ All active companies are already in Status Report!")
         print()
-        return
+        print("-" * 80)
+        print("Comparison Results:")
+        print("-" * 80)
 
-    print(f"Found {len(missing_companies)} companies to add:")
-    for company_name, _ in missing_companies:
-        print(f"  - {company_name}")
+        # Find missing companies
+        missing_companies = []
+        for company_name, page_id in active_companies.items():
+            if company_name not in status_companies:
+                missing_companies.append((company_name, page_id))
 
-    print()
-    print("-" * 80)
-    print("Adding missing companies to Status Report:")
-    print("-" * 80)
-
-    # Add missing companies
-    success_count = 0
-    failed_count = 0
-
-    for company_name, page_id in missing_companies:
-        if add_company_to_status_report(notion, status_report_db_id, company_name, page_id):
-            success_count += 1
+        if not missing_companies:
+            print("✓ All active companies are already in Status Report!")
+            print()
         else:
-            failed_count += 1
+            print(f"Found {len(missing_companies)} companies to add:")
+            for company_name, _ in missing_companies:
+                print(f"  - {company_name}")
 
-    print()
-    print("=" * 80)
-    print("Sync Summary:")
-    print("=" * 80)
-    print(f"Total active companies in SU Long List: {len(active_companies)}")
-    print(f"Companies already in Status Report: {len(status_companies)}")
-    print(f"Companies to add: {len(missing_companies)}")
-    print(f"Successfully added: {success_count}")
-    print(f"Failed to add: {failed_count}")
-    print("=" * 80)
-    print()
+            print()
+            print("-" * 80)
+            print("Adding missing companies to Status Report:")
+            print("-" * 80)
+
+            # Add missing companies
+            success_count = 0
+            failed_count = 0
+
+            for company_name, page_id in missing_companies:
+                if add_company_to_status_report(notion, status_report_db_id, company_name, page_id):
+                    success_count += 1
+                else:
+                    failed_count += 1
+
+            print()
+            print("=" * 80)
+            print("Sync Summary:")
+            print("=" * 80)
+            print(f"Total active companies in SU Long List: {len(active_companies)}")
+            print(f"Companies already in Status Report: {len(status_companies)}")
+            print(f"Companies to add: {len(missing_companies)}")
+            print(f"Successfully added: {success_count}")
+            print(f"Failed to add: {failed_count}")
+            print("=" * 80)
+            print()
+
+    except Exception as exc:
+        status = "異常終了"
+        print(f"✗ Error: {exc}")
+    finally:
+        log_capture.stop()
+        log_content = log_capture.get_log()
+        if exe_log_db_id:
+            save_execution_log(
+                notion,
+                exe_log_db_id,
+                status,
+                log_content,
+                script_name="sync_databases"
+            )
 
 
 if __name__ == "__main__":
