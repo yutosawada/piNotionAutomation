@@ -11,28 +11,54 @@ Features:
 - Applies orange+bold styling to recently updated Business States
 - Resets styling for Business States older than 2 weeks
 - Records update timestamps in business_status_update_day
+
+Uses the HTTP request interface because DatabasesEndpoint.query is not available in notion-client 2.7.0.
 """
 
 import os
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
+import requests
 from dotenv import load_dotenv
 from notion_client import Client
 from automation.execution_logger import LogCapture, save_execution_log
 
 
-def fetch_all_pages(notion, database_id):
+def notion_database_query(api_token: str, database_id: str, start_cursor=None):
+    """
+    Perform a database query via HTTPS.
+    Required because DatabasesEndpoint.query is not available in notion-client 2.7.0.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "page_size": 100,
+    }
+    if start_cursor:
+        body["start_cursor"] = start_cursor
+
+    resp = requests.post(
+        f"https://api.notion.com/v1/databases/{database_id}/query",
+        headers=headers,
+        json=body,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_all_pages(api_token: str, database_id: str):
     """Fetch all pages from a database with pagination."""
     all_results = []
     has_more = True
     start_cursor = None
 
     while has_more:
-        response = notion.databases.query(
-            database_id=database_id,
-            start_cursor=start_cursor
-        )
+        response = notion_database_query(api_token, database_id, start_cursor=start_cursor)
         all_results.extend(response['results'])
         has_more = response.get('has_more', False)
         start_cursor = response.get('next_cursor')
@@ -57,13 +83,13 @@ def get_company_name(page):
     return None
 
 
-def get_active_companies(notion, database_id):
+def get_active_companies(api_token: str, database_id: str):
     """
     Get all companies where Active Flag is 'Active'.
     Returns a list of dictionaries with company information.
     """
     print("Fetching active companies...")
-    all_pages = fetch_all_pages(notion, database_id)
+    all_pages = fetch_all_pages(api_token, database_id)
 
     active_companies = []
 
@@ -97,6 +123,13 @@ def get_active_companies(notion, database_id):
                         elif prop_type == 'rich_text':
                             text = ''.join([t['plain_text'] for t in prop_value['rich_text']])
                             company_info['properties'][prop_name] = text
+                            # Store style info for Business State to check if reset is needed
+                            if prop_name == 'Business State' and prop_value['rich_text']:
+                                annotations = prop_value['rich_text'][0].get('annotations', {})
+                                company_info['properties']['_business_state_styled'] = (
+                                    annotations.get('bold', False) and
+                                    annotations.get('color', 'default') == 'orange'
+                                )
 
                         elif prop_type == 'number':
                             company_info['properties'][prop_name] = prop_value['number']
@@ -345,9 +378,14 @@ def process_active_companies(notion, companies):
     2. Copy Business State to status_buffer
     3. Update business_status_update_day to current date
     4. Append to business_state_log: →{Business State}({MM/DD})
+
+    Returns:
+        set: Set of page IDs that were updated (to skip in style reset)
     """
+    updated_page_ids = set()
+
     if not companies:
-        return
+        return updated_page_ids
 
     print("\nSyncing Business States...")
     updated_count = 0
@@ -373,6 +411,7 @@ def process_active_companies(notion, companies):
             if success:
                 print(f"  ✓ {company_name}: Synced")
                 updated_count += 1
+                updated_page_ids.add(page_id)
             else:
                 print(f"  ✗ {company_name}: Failed")
                 error_count += 1
@@ -380,8 +419,10 @@ def process_active_companies(notion, companies):
     if updated_count > 0 or error_count > 0:
         print(f"  Updated: {updated_count}, Errors: {error_count}")
 
+    return updated_page_ids
 
-def reset_old_business_state_styles(notion, companies):
+
+def reset_old_business_state_styles(notion, companies, skip_page_ids=None):
     """
     Reset Business State styles for companies where business_status_update_day
     is older than the configured threshold (default 14 days).
@@ -389,12 +430,16 @@ def reset_old_business_state_styles(notion, companies):
     Args:
         notion: Notion client instance
         companies: List of company data dictionaries
+        skip_page_ids: Set of page IDs to skip (recently updated pages)
 
     Returns:
         int: Number of companies whose styles were reset
     """
     if not companies:
         return 0
+
+    if skip_page_ids is None:
+        skip_page_ids = set()
 
     print("\nResetting old styles (> threshold)...")
     reset_days = _load_reset_days()
@@ -403,10 +448,22 @@ def reset_old_business_state_styles(notion, companies):
     reset_count = 0
     error_count = 0
 
+    skipped_count = 0
+
     for company in companies:
         company_name = company['company_name']
         page_id = company['page_id']
         properties = company['properties']
+
+        # Skip pages that were just updated in this run
+        if page_id in skip_page_ids:
+            continue
+
+        # Skip if style is already reset (not bold+orange)
+        is_styled = properties.get('_business_state_styled', False)
+        if not is_styled:
+            skipped_count += 1
+            continue
 
         # Get business_status_update_day
         business_status_update_day = properties.get('business_status_update_day')
@@ -440,8 +497,8 @@ def reset_old_business_state_styles(notion, companies):
         except (ValueError, TypeError):
             error_count += 1
 
-    if reset_count > 0 or error_count > 0:
-        print(f"  Reset: {reset_count}, Errors: {error_count}")
+    if reset_count > 0 or error_count > 0 or skipped_count > 0:
+        print(f"  Reset: {reset_count}, Skipped (already reset): {skipped_count}, Errors: {error_count}")
 
     return reset_count
 
@@ -474,7 +531,7 @@ def main():
 
     try:
         # Get active companies
-        active_companies = get_active_companies(notion, su_long_list_db_id)
+        active_companies = get_active_companies(notion_api_key, su_long_list_db_id)
 
         # Display results
         display_active_companies(active_companies)
@@ -483,10 +540,11 @@ def main():
         save_to_json(active_companies)
 
         # Process companies and sync Business State
-        process_active_companies(notion, active_companies)
+        updated_page_ids = process_active_companies(notion, active_companies)
 
         # Reset styles for Business States older than 2 weeks
-        reset_old_business_state_styles(notion, active_companies)
+        # Skip pages that were just updated in this run
+        reset_old_business_state_styles(notion, active_companies, skip_page_ids=updated_page_ids)
 
         print("\n✓ Completed")
 
@@ -506,9 +564,11 @@ def main():
                 exe_log_db_id,
                 status,
                 log_content,
-                script_name="update_business_state"
+                script_name="update_business_state",
+                api_token=notion_api_key
             )
 
 
 if __name__ == "__main__":
     main()
+

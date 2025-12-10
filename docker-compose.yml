@@ -1,5 +1,15 @@
 
 services:
+  test:
+    build: .
+    container_name: notion-tests
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: /bin/sh -c "coverage run -m unittest discover -s tests -v && coverage html -d /app/htmlcov"
+
   sync-databases:
     build: .
     container_name: notion-sync-databases
@@ -29,13 +39,3 @@ services:
       - .:/app
     working_dir: /app
     command: python -m automation.update_business_state
-
-  test:
-    build: .
-    container_name: notion-tests
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    working_dir: /app
-    command: /bin/sh -c "coverage run -m unittest discover -s tests -v && coverage html -d /app/htmlcov"

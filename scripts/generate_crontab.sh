@@ -10,11 +10,13 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
   exit 1
 fi
 
+# Parse schedule_config.yml to extract script entries
+# Format: script_name|command|schedule
 mapfile -t SCHEDULE_ENTRIES < <(
   awk '
   function emit() {
-    if (script != "" && command != "" && interval != "")
-      print script "|" command "|" interval
+    if (script != "" && command != "" && schedule != "")
+      print script "|" command "|" schedule
   }
   { sub(/\r$/, "") }
   /^scripts:/ { in_scripts=1; next }
@@ -26,7 +28,7 @@ mapfile -t SCHEDULE_ENTRIES < <(
     sub(/^  /, "", script)
     sub(/:.*/, "", script)
     command=""
-    interval=""
+    schedule=""
     next
   }
   /^    command:/ {
@@ -36,11 +38,15 @@ mapfile -t SCHEDULE_ENTRIES < <(
     command=cmd
     next
   }
-  /^    interval_minutes:/ {
+  /^    schedule:/ {
     val=$0
-    sub(/^    interval_minutes:[[:space:]]*/, "", val)
+    sub(/^    schedule:[[:space:]]*/, "", val)
+    # Remove surrounding quotes if present
+    gsub(/^"/, "", val)
+    gsub(/"[[:space:]]*$/, "", val)
+    gsub(/"[[:space:]]+#.*/, "", val)
     sub(/[[:space:]]+#.*/, "", val)
-    interval=val
+    schedule=val
     next
   }
   END { emit() }
@@ -52,56 +58,43 @@ if (( ${#SCHEDULE_ENTRIES[@]} == 0 )); then
   exit 0
 fi
 
+# Validate cron schedule format (5 fields: min hour dom month dow)
+validate_cron_schedule() {
+  local schedule="$1"
+  local field_count
+  field_count=$(echo "${schedule}" | awk '{print NF}')
+  if (( field_count != 5 )); then
+    return 1
+  fi
+  return 0
+}
+
+# Build cron line from schedule and command
 build_cron_line() {
-  local interval="$1"
+  local schedule="$1"
   local command="$2"
 
-  if (( interval <= 0 )); then
+  if ! validate_cron_schedule "${schedule}"; then
     return 1
   fi
 
-  local minute_part hour_part dom_part
-  minute_part="*"
-  hour_part="*"
-  dom_part="*"
-
-  if (( interval < 60 )); then
-    minute_part="*/${interval}"
-  elif (( interval < 1440 )); then
-    local hours=$(( interval / 60 ))
-    if (( interval % 60 == 0 )); then
-      minute_part="0"
-      hour_part="*/${hours}"
-    else
-      minute_part="*/${interval}"
-    fi
-  else
-    local days=$(( interval / 1440 ))
-    if (( interval % 1440 == 0 && days <= 31 )); then
-      minute_part="0"
-      hour_part="0"
-      dom_part="*/${days}"
-    else
-      return 1
-    fi
-  fi
-
-  printf "%s %s %s * * cd %s && %s >> %s/cron.log 2>&1\n" \
-    "${minute_part}" "${hour_part}" "${dom_part}" "${REPO_ROOT}" "${command}" "${REPO_ROOT}"
+  printf "%s cd %s && %s >> %s/cron.log 2>&1\n" \
+    "${schedule}" "${REPO_ROOT}" "${command}" "${REPO_ROOT}"
 }
 
 CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
 NEW_LINES=()
 
 for entry in "${SCHEDULE_ENTRIES[@]}"; do
-  IFS="|" read -r name command interval <<< "${entry}"
-  if [[ -z "${command}" || -z "${interval}" ]]; then
-    echo "# Skipping ${name}: missing command or interval"
+  IFS="|" read -r name command schedule <<< "${entry}"
+  if [[ -z "${command}" || -z "${schedule}" ]]; then
+    echo "# Skipping ${name}: missing command or schedule"
     continue
   fi
 
-  if ! cron_line=$(build_cron_line "${interval}" "${command}"); then
-    echo "# Skipping ${name}: invalid interval (${interval})"
+  if ! cron_line=$(build_cron_line "${schedule}" "${command}"); then
+    echo "# Skipping ${name}: invalid schedule format (${schedule})"
+    echo "#   Expected format: 'min hour day month weekday' (5 fields)"
     continue
   fi
 

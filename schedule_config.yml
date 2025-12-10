@@ -1,15 +1,22 @@
 log_retention_days: 5  # 実行ログを保持する日数
 business_state_reset_days: 14  # Business State の強調スタイルを戻すまでの日数
 
+# cron schedule format: 分 時 日 月 曜日
+# 例:
+#   "0 9 * * *"     -> 毎日9:00に実行
+#   "0 0 1 * *"     -> 毎月1日の0:00に実行
+#   "0 9 * * 1"     -> 毎週月曜日9:00に実行
+#   "*/30 * * * *"  -> 30分ごとに実行
+
 scripts:
   sync_databases:
     command: ./scripts/run_sync_databases.sh
-    interval_minutes: 43200  # 43200分 = 30日ごとに実行
+    schedule: "10 * * * *"  # 毎時10分に実行
 
   sync_oi_issue_list:
     command: ./scripts/run_sync_oi_issue_list.sh
-    interval_minutes: 43200  # 43200分 = 30日ごとに実行
+    schedule: "10 * * * *"  # 毎時10分に実行
 
   update_business_state:
     command: ./scripts/run_update_business_state.sh
-    interval_minutes: 1440  # 1440分 = 24時間 = 1日ごとに実行
+    schedule: "10 * * * *"  # 毎時10分に実行

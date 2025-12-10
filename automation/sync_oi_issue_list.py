@@ -8,27 +8,72 @@ OI Issue List -> OI List Share Sync Script
 3. Writes the relation name into the title property of the destination database.
 4. After syncing, copies *_ref rollup values into the corresponding user-facing
    columns (オープンイノベーションとの親和性／探索難易度).
+
+Uses the HTTP request interface because DatabasesEndpoint.query is not available in notion-client 2.7.0.
 """
 
 import os
 import sys
 from typing import Dict, Optional, Tuple
+import requests
 from dotenv import load_dotenv
 from notion_client import Client
 from automation.execution_logger import LogCapture, save_execution_log
 
 
-def fetch_all_pages(notion: Client, database_id: str):
+def notion_database_query(api_token: str, database_id: str, start_cursor=None):
+    """
+    Perform a database query via HTTPS.
+    Required because DatabasesEndpoint.query is not available in notion-client 2.7.0.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "page_size": 100,
+    }
+    if start_cursor:
+        body["start_cursor"] = start_cursor
+
+    resp = requests.post(
+        f"https://api.notion.com/v1/databases/{database_id}/query",
+        headers=headers,
+        json=body,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def notion_database_retrieve(api_token: str, database_id: str):
+    """
+    Retrieve database metadata via HTTPS.
+    Required because DatabasesEndpoint.retrieve may not work as expected in 2.7.0.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Notion-Version": "2022-06-28",
+    }
+
+    resp = requests.get(
+        f"https://api.notion.com/v1/databases/{database_id}",
+        headers=headers,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_all_pages(api_token: str, database_id: str):
     """Fetch all pages from a database (handles pagination)."""
     all_results = []
     has_more = True
     start_cursor = None
 
     while has_more:
-        response = notion.databases.query(
-            database_id=database_id,
-            start_cursor=start_cursor
-        )
+        response = notion_database_query(api_token, database_id, start_cursor=start_cursor)
         all_results.extend(response['results'])
         has_more = response.get('has_more', False)
         start_cursor = response.get('next_cursor')
@@ -36,9 +81,9 @@ def fetch_all_pages(notion: Client, database_id: str):
     return all_results
 
 
-def get_title_property_name(notion: Client, database_id: str) -> str:
+def get_title_property_name(api_token: str, database_id: str) -> str:
     """Retrieve the title property name for the specified database."""
-    db_info = notion.databases.retrieve(database_id=database_id)
+    db_info = notion_database_retrieve(api_token, database_id)
     for prop_name, prop_meta in db_info.get('properties', {}).items():
         if prop_meta.get('type') == 'title':
             return prop_name
@@ -55,10 +100,10 @@ def extract_title(page: dict, title_property: str) -> str:
     return ''
 
 
-def get_active_issues(notion: Client, database_id: str, title_property: str) -> Dict[str, str]:
+def get_active_issues(api_token: str, database_id: str, title_property: str) -> Dict[str, str]:
     """Collect Active issues keyed by title -> page_id."""
     print("Fetching Active issues...")
-    all_pages = fetch_all_pages(notion, database_id)
+    all_pages = fetch_all_pages(api_token, database_id)
 
     active_pages: Dict[str, str] = {}
     for page in all_pages:
@@ -231,13 +276,13 @@ def property_matches(prop_data: dict, new_value: str) -> bool:
 
 
 def get_share_entries(
-    notion: Client,
+    api_token: str,
     database_id: str,
     title_property: str
 ) -> Tuple[Dict[str, str], set]:
     """Collect existing entries keyed by title and track referenced issue IDs."""
     print("Fetching existing entries from OI List Share...")
-    all_pages = fetch_all_pages(notion, database_id)
+    all_pages = fetch_all_pages(api_token, database_id)
 
     entries: Dict[str, str] = {}
     linked_issue_ids: set = set()
@@ -259,7 +304,7 @@ def get_share_entries(
     return entries, linked_issue_ids
 
 
-def copy_reference_properties(notion: Client, database_id: str):
+def copy_reference_properties(api_token: str, notion: Client, database_id: str):
     """Copy *_ref rollup fields into the corresponding visible properties."""
     reference_pairs = [
         ("オープンイノベーションとの親和性_ref", "オープンイノベーションとの親和性"),
@@ -267,7 +312,7 @@ def copy_reference_properties(notion: Client, database_id: str):
     ]
 
     print("\nSyncing reference fields to display columns...")
-    all_pages = fetch_all_pages(notion, database_id)
+    all_pages = fetch_all_pages(api_token, database_id)
     updated_pages = 0
 
     for page in all_pages:
@@ -359,11 +404,11 @@ def main():
     try:
         log_capture.start()
 
-        issue_title_property = get_title_property_name(notion, issue_db_id)
-        share_title_property = get_title_property_name(notion, share_db_id)
+        issue_title_property = get_title_property_name(notion_api_key, issue_db_id)
+        share_title_property = get_title_property_name(notion_api_key, share_db_id)
 
-        active_issues = get_active_issues(notion, issue_db_id, issue_title_property)
-        share_entries, linked_issue_ids = get_share_entries(notion, share_db_id, share_title_property)
+        active_issues = get_active_issues(notion_api_key, issue_db_id, issue_title_property)
+        share_entries, linked_issue_ids = get_share_entries(notion_api_key, share_db_id, share_title_property)
 
         missing_titles = [
             (title, page_id)
@@ -409,7 +454,7 @@ def main():
             status = "異常終了"
             exit_code = 1
 
-        copy_reference_properties(notion, share_db_id)
+        copy_reference_properties(notion_api_key, notion, share_db_id)
 
     except Exception as exc:
         status = "異常終了"
@@ -424,7 +469,8 @@ def main():
                 exe_log_db_id,
                 status,
                 log_content,
-                script_name="sync_oi_issue_list"
+                script_name="sync_oi_issue_list",
+                api_token=notion_api_key
             )
         if exit_code != 0:
             sys.exit(exit_code)
@@ -432,3 +478,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
