@@ -4,12 +4,12 @@ business_state_reset_days: 14  # Business State の強調スタイルを戻す�
 scripts:
   sync_databases:
     command: ./scripts/run_sync_databases.sh
-    interval_minutes: 1  # 実行間隔（分）。30日ごとに実行
+    interval_minutes: 43200  # 43200分 = 30日ごとに実行
 
   sync_oi_issue_list:
     command: ./scripts/run_sync_oi_issue_list.sh
-    interval_minutes: 1  # 実行間隔（分）。30日ごとに実行
+    interval_minutes: 43200  # 43200分 = 30日ごとに実行
 
   update_business_state:
     command: ./scripts/run_update_business_state.sh
-    interval_minutes: 1  # 実行間隔（分）。1日ごとに実行
+    interval_minutes: 1440  # 1440分 = 24時間 = 1日ごとに実行
